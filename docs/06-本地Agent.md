@@ -77,9 +77,57 @@ Invoke-RestMethod http://127.0.0.1:5260/agent/hold -Method Post -ContentType 'ap
 
 ## 6. 在哪儿看它干活
 
-- 手机上开操控台网页 `https://<你的域名>/console/`（配过对的设备）：看直播、看它这一趟做了哪几步、按「我来」。（操控台还带着我们家的样子，待整理。）
+- 手机上开操控台网页 `https://<你的域名>/console/`（配过对的设备）：看直播、看它这一趟做了哪几步、按「我来」。（操控台的样子是照我们家配的，想换自己改 `web/console/index.html`。）
 - 你自己的聊天页：第 4 章最后一节，把小屏嵌进去。
 - 只想看画面：CrossDesk 的 App 或网页版直接连。
+
+## 7. AI 住在 VPS 上
+
+> 适合：AI 跑在 VPS 上（Claude Code、Codex、自己写的 Agent……），要动的是家里这台电脑。
+
+它够不着电脑上的 `127.0.0.1:5260`，可它跟隧道的另一头在同一台 VPS 上：VPS 本机的 `39260` 就是电脑上小程序的 `5261`（第 5 章）。小程序在那头留了一扇 **desk 门**，给的跟屏幕那只手是同一套：截图、点、滚、按键、打字、字幕，外加网页那十样。
+
+**这扇门默认关着。** 要开：
+
+1. 生成一把桌面钥匙，写进电脑上 `deploy/door.json` 的 `d`：
+
+   ```bash
+   openssl rand -hex 16
+   ```
+
+   不到 16 位字母数字的不算数，照抄例子文件里那句尖括号说明也不算，门照样关着。小程序每一下都现读这个文件，不用重起。
+2. VPS 上把同一把钥匙存成只有 Agent 读得到的文件，比如 `~/.desk.key`，`chmod 600`。
+3. Caddy 上把 `/api/agent/desk*` 挡在外面（第 5 章那段已经写了）。小程序自己也只认从 VPS 本机进来的请求，经域名来的就算漏过了 Caddy，也是 403。
+
+在 VPS 上这么用（`K=$(cat ~/.desk.key)`，POST 都要带 `-H 'Content-Type: application/json'`）：
+
+| | 怎么敲 | 回什么 |
+|---|---|---|
+| 看屏幕 | `curl -s -H "X-Desk-Key: $K" -D - -o shot.jpg 'http://127.0.0.1:39260/api/agent/desk/shot?w=1280'` | 一张 jpg。头里有 `X-Scale`（图上的坐标乘它＝屏幕坐标）、`X-Width`、`X-Height`、`X-Cursor` |
+| 动手 | `POST /api/agent/desk/act`，跟本机 `/agent/act` 一样：`{"t":"click","x":640,"y":400,"scale":2,"say":"点开始菜单"}`，`t` 有 click／scroll／key／text／move | `{"ok":true}` |
+| 换字幕 | `POST /api/agent/desk/say`：`{"s":"在干嘛"}` | |
+| 收尾 | `POST /api/agent/desk/done`：`{"s":"做成了什么"}` | |
+| 人在不在 | `GET /api/agent/desk/idle` | 离人上次碰鼠标键盘多久、「我来」按没按着 |
+| 网页 | `POST /api/agent/desk/browser`：`{"tool":"open","args":{"url":"https://example.com"}}`。tool 有 look、open（url）、state、extract、click（target）、type（target、text）、keys（key）、scroll（direction：up／down）、back、close，跟第 7 章那十样是同一套 | 跟连接器回的一样 |
+
+被挡回来的样子：
+
+- **409**，带 `waitForHuman: true`：你按着「我来」，或者四秒内碰过鼠标键盘。让它等，别一直重试。
+- **403**：钥匙不对，或者是从域名进来的。
+- **404**：门关着（`d` 没填，或者不算数）。
+
+跟本机那只手比，这条路更硬：
+
+- 没有 `force`，带了也会被扔掉。你一碰，它就停。
+- 「我来」按着的时候，连截图也不给。
+- 它手里没有放开「我来」的口子：本机那条 `/agent/hold` 不经隧道。只能你在手机上按「还给你」。
+- 截图直接回给它，不在电脑上落文件。它看得见屏幕，看不见你电脑上的文件，除非你把文件开在屏幕上。
+
+> **拿到 `d` 的，能点你整块屏幕。** 它跟连接器钥匙 `g` 一样，只该待在 VPS 上；VPS 被人登进去，这把钥匙也就丢了。不用了就把 `d` 那行删掉，门当场关上。
+
+看它干活还是第 6 节那几处，最顺手的是操控台网页。
+
+我们自己没有住在 VPS 上的 AI。这扇门是照着这一章写的，在电脑上起了一份测试副本试过：没钥匙、钥匙不对、从域名进来，都被挡回去；截图、挪鼠标能通；按着「我来」时截图、动手都被挡。**真从 VPS 经隧道敲过来，还没试过。**
 
 ---
 

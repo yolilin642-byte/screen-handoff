@@ -2,7 +2,7 @@
 // 两扇门：
 //   127.0.0.1:5260 —— 只给本机（我的手、眼、字幕），永远不往外接。
 //   127.0.0.1:5261 —— 操控台读账用的，经 frpc-screen 接到 VPS，<你的域名>/api/agent/*；
-//                     只能看状态、看步骤、按接手/还手，要配对过的钥匙。
+//                     看状态、看步骤、按接手/还手，要配对过的钥匙；连接器、住在 VPS 上的 Agent（desk，d 不填就关着）各带各的钥匙来动手。
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -639,6 +639,80 @@ async function cardControl(body) {
   return { ...state, pending: state.pending || (state.hold && remoteBusy) };
 }
 
+// —— 住在 VPS 上的 Agent 的手 ——
+// 跟本机那只手（/agent/shot、act、say、done、idle）同一套，从隧道进来，认 door.json 的 d；d 不填＝这扇门关着。
+// 只认 VPS 本机敲 39260 进来的（Host 是 127.0.0.1）：经域名来的该被 Caddy 挡掉（第 5 章），漏过来这里也不认。
+// 跟本机那只手不一样的三处：截图直接回 jpg（它在 VPS 上，读不到电脑上的文件）；没有 force，人四秒内碰过就是 409；
+// 按着「我来」时连截图也不给。browser 跟连接器那十样是同一套（同一个会话、一次一件）。
+// 例子文件里 d 是一句尖括号说明，照抄忘了改就等于钥匙人人知道：不是 16 位以上的字母数字就当没填
+function deskKey() {
+  try { const k = String(JSON.parse(fs.readFileSync(DOOR, 'utf8').replace(/^﻿/, '')).d || ''); return /^[A-Za-z0-9_-]{16,}$/.test(k) ? k : ''; }
+  catch { return ''; }
+}
+const sameKey = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length > 0 && x.length === y.length && crypto.timingSafeEqual(x, y); };
+async function desk(op, req, u, res) {
+  const d = deskKey();
+  if (!d) return send(res, 404, { error: 'desk door is closed (no d in deploy/door.json)' });
+  if (!/^(127\.0\.0\.1|localhost):\d+$/.test((req.headers.host || '').toLowerCase())) { note({ ev: 'desk-refused', why: 'host', op }); return send(res, 403, { error: 'no' }); }
+  if (!sameKey(req.headers['x-desk-key'] || '', d)) { note({ ev: 'desk-refused', why: 'key', op }); return send(res, 403, { error: 'no' }); }
+  const post = async () => { if (req.method !== 'POST') throw remoteErr(405, 'POST required'); return readJson(req); };
+  try {
+    if (op === 'shot') {
+      const epoch = controlEpoch;
+      if (agent.hold) throw remoteErr(409, 'The user is holding control (pressed 我来). Wait until it is given back.');
+      if ((await herHandsOn()).hers) throw remoteErr(409, 'The user is using the computer right now. Try again shortly.');
+      const lj = liveJob(); if (lj && !lj.endedAt) lj.lastAt = Date.now();
+      const sc = await ask('screen');
+      const W = +sc.head[1], H = +sc.head[2];
+      const tw = Math.max(320, Math.min(W, Number(u.searchParams.get('w')) || 1280)), th = Math.round(H * tw / W);
+      const r = await ask('frame', 0, 0, W, H, tw, th, 70, '');
+      if (agent.hold || epoch !== controlEpoch) throw remoteErr(409, 'The user took control. Wait until it is given back.');
+      note({ ev: 'desk', op, w: tw, h: th });
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'Content-Length': r.body.length,
+        'X-Width': tw, 'X-Height': th, 'X-Scale': String(W / tw), 'X-Cursor': (+r.head[3]) + ',' + (+r.head[4]) });
+      return res.end(r.body);
+    }
+    if (op === 'act') {
+      const b = await post();
+      delete b.force;   // 这扇门没有「硬来」
+      if (['click', 'move', 'scroll'].includes(b.t) && !(Number.isFinite(+b.x) && Number.isFinite(+b.y))) throw remoteErr(400, 'x and y are required');
+      if (b.scale && b.x != null) { const s = Number(b.scale); if (!(s > 0)) throw remoteErr(400, 'bad scale'); b.x *= s; b.y *= s; }
+      await act(b, 'kael');
+      note({ ev: 'desk', op, t: b.t });
+      return send(res, 200, { ok: true });
+    }
+    if (op === 'say') {
+      const b = await post();
+      if (b.s && !b.quiet && !agent.hold) lookSoon(b);
+      else say(b.s, b.ms || 20000);
+      return send(res, 200, { ok: true, job: job && !job.endedAt ? job.id : null });
+    }
+    if (op === 'done') {
+      const b = req.method === 'POST' ? await readJson(req) : {};
+      controlEpoch++;
+      clearTimeout(captionTimer); ov('hide'); agent.caption = ''; agent.lastActAt = 0; lookNext = null;
+      endJob(String(b.s || u.searchParams.get('s') || ''), !agent.hold);
+      return send(res, 200, { ok: true, job: job ? job.id : null });
+    }
+    if (op === 'idle') {
+      const h = await herHandsOn();
+      return send(res, 200, { idleMs: h.idle, sinceOursMs: h.ours, humanNow: h.hers, hold: !!agent.hold });
+    }
+    if (op === 'browser') {
+      const b = await post();
+      if (remoteBusy) return send(res, 429, { ok: false, error: 'The previous action is still running.' });
+      remoteBusy = true;
+      try { return send(res, 200, await remoteDo(String(b.tool || ''), b.args || {})); }
+      finally { remoteBusy = false; }
+    }
+  } catch (e) {
+    if (e.code >= 400 && e.code < 500) return send(res, e.code, { ok: false, error: e.message, waitForHuman: e.code === 409 });
+    if (e instanceof SyntaxError) return send(res, 400, { ok: false, error: 'bad json' });
+    note({ ev: 'desk-error', op, msg: e.message });
+    return send(res, 500, { ok: false, error: e.message });
+  }
+}
+
 // —— 操控台那扇门（经 VPS 进来）——
 let pairing = null;
 function loadTokens() { try { return JSON.parse(fs.readFileSync(TOKENS, 'utf8')); } catch { return {}; } }
@@ -732,6 +806,9 @@ const publicServer = http.createServer(async (req, res) => {
       catch (e) { note({ ev: 'remote-error', tool: b.tool, msg: e.message }); return send(res, [400, 409].includes(e.code) ? e.code : 500, { ok: false, error: e.message }); }
       finally { remoteBusy = false; }
     }
+    // 住在 VPS 上的 Agent 的手（desk 那扇门），细的在 desk() 上面
+    const dm = /^\/api\/agent\/desk\/(shot|act|say|done|idle|browser)$/.exec(u.pathname);
+    if (dm) return await desk(dm[1], req, u, res);
     // 配过的设备给新设备发码。
     // 手上有门钥匙的（聊天页、操控台里那扇框）来要，发一个跟 /agent/paircode 一样的码（十分钟、一次、错五回作废，新的顶掉旧的）
     if (u.pathname === '/api/agent/newcode' && req.method === 'POST') {
