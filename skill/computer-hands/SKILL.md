@@ -38,7 +38,7 @@ OpenCLI 自己的用法读它带的：`opencli skills read opencli-usage`（找�
 
 - 够不着 5260，就在 VPS 本机走同一套：`http://127.0.0.1:39260/api/agent/desk/<shot|act|say|done|idle|browser>`，每一下带头 `X-Desk-Key: <~/.desk.key 里那串>`。不走域名。
 - `shot` 直接回 jpg，`scale` 在回头的 `X-Scale` 里；`act`／`say`／`done` 的 JSON 跟上面一样。
-- 上网用 `POST browser {tool, args}`（open／state／click／type……，跟连接器那十样一样），先 `state` 读编号再点。
+- 上网用 `POST browser {tool, args}`（open／state／click／type……，跟连接器的 browser_* 一样），先 `state` 读编号再点。
 - 409 跟上面一样停手等。404＝主人把门关了，别找别的路进来。
 
 ## 不做的

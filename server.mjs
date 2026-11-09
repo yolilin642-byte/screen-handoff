@@ -572,6 +572,27 @@ const REMOTE_TOOLS = {
   back: () => ({ say: '后退', args: ['back'] }),
   close: () => ({ say: '关掉它开的那扇', args: ['close'] }),
 };
+const inBox = (v, max, what) => { const n = Number(v); if (!Number.isFinite(n) || n < 0 || n > max) throw remoteErr(400, what + ' is outside the screenshot'); return n; };
+const DESK_TOOLS = {
+  sclick: (a, tw, th) => {
+    const x = inBox(a.x, tw, 'x'), y = inBox(a.y, th, 'y'), btn = a.button === 'right' ? 'right' : 'left';
+    return { t: 'click', x, y, btn, n: a.double ? 2 : 1, say: (a.double ? '双击' : btn === 'right' ? '右键点' : '点') + ` (${Math.round(x)}, ${Math.round(y)})` };
+  },
+  sscroll: (a, tw, th) => {
+    const x = inBox(a.x, tw, 'x'), y = inBox(a.y, th, 'y'), dy = Math.max(-20, Math.min(20, Math.round(Number(a.amount ?? 3)) || 3));
+    return { t: 'scroll', x, y, dy, say: dy > 0 ? '往下滚' : '往上滚' };
+  },
+  skey: (a) => {
+    const k = String(a.key ?? '').trim().toLowerCase();
+    if (!/^[a-z0-9+\-=,./;'`[\]\\]{1,40}$/.test(k)) throw remoteErr(400, 'key 不对');
+    return { t: 'key', k, say: '按 ' + k };
+  },
+  stype: (a) => {
+    const s = String(a.text ?? '');
+    if (!s || s.length > 4000) throw remoteErr(400, 'text 不对');
+    return { t: 'text', s, say: '打字' };
+  },
+};
 let remoteBusy = false;
 async function remoteDo(tool, a) {
   const epoch = controlEpoch;
@@ -587,6 +608,23 @@ async function remoteDo(tool, a) {
     check();
     note({ ev: 'remote', tool, w: tw, h: th, bytes: r.body.length });
     return { ok: true, text: `Screenshot of the whole screen, ${tw}x${th} (real screen ${W}x${H}).`, image: r.body.toString('base64') };
+  }
+  // 桌面那四样走跟本机那只手同一个 act（「我来」、四秒、没有 force），
+  // 坐标是 look 那张 1280 宽的图上的；做完等一下再拍一张交回去，它不用再单独看一眼
+  if (DESK_TOOLS[tool]) {
+    const sc = await ask('screen');
+    const W = +sc.head[1], H = +sc.head[2], tw = Math.min(W, 1280), th = Math.round(H * tw / W), s = W / tw;
+    const b = DESK_TOOLS[tool](a || {}, tw, th);
+    check();
+    b.say = 'AI：' + b.say;
+    if (b.x != null) { b.x *= s; b.y *= s; }
+    await act(b, 'kael');
+    note({ ev: 'remote', tool, t: b.t });
+    await new Promise(r => setTimeout(r, 600));
+    check();
+    const r = await ask('frame', 0, 0, W, H, tw, th, 62, '');
+    check();
+    return { ok: true, text: `Done. Screenshot right after it, ${tw}x${th}.`, image: r.body.toString('base64') };
   }
   const mk = REMOTE_TOOLS[tool];
   if (!mk) throw remoteErr(400, 'unknown tool');
@@ -643,7 +681,7 @@ async function cardControl(body) {
 // 跟本机那只手（/agent/shot、act、say、done、idle）同一套，从隧道进来，认 door.json 的 d；d 不填＝这扇门关着。
 // 只认 VPS 本机敲 39260 进来的（Host 是 127.0.0.1）：经域名来的该被 Caddy 挡掉（第 5 章），漏过来这里也不认。
 // 跟本机那只手不一样的三处：截图直接回 jpg（它在 VPS 上，读不到电脑上的文件）；没有 force，人四秒内碰过就是 409；
-// 按着「我来」时连截图也不给。browser 跟连接器那十样是同一套（同一个会话、一次一件）。
+// 按着「我来」时连截图也不给。browser 跟连接器的看屏幕、网页那几样是同一套（同一个会话、一次一件）。
 // 例子文件里 d 是一句尖括号说明，照抄忘了改就等于钥匙人人知道：不是 16 位以上的字母数字就当没填
 function deskKey() {
   try { const k = String(JSON.parse(fs.readFileSync(DOOR, 'utf8').replace(/^﻿/, '')).d || ''); return /^[A-Za-z0-9_-]{16,}$/.test(k) ? k : ''; }

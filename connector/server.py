@@ -137,7 +137,7 @@ button{{background:rgba(224,182,79,.22);border-color:rgba(170,140,70,.5)}}
 </style></head><body><main>
 <h1>允许 {client} 用你的电脑？</h1>
 <p>允许以后，它能：</p>
-<ul><li>看你的整块屏幕</li><li>在你的 Chrome 里开网页、点、打字（登着号的站也算）</li></ul>
+<ul><li>看你的整块屏幕</li><li>在你的 Chrome 里开网页、点、打字（登着号的站也算）</li><li>在整块屏幕上点、滚、按键、打字（浏览器以外的软件也算）</li></ul>
 <p>聊天应用多半每一下都会先问你；你在直播卡或操控台上按「我来」、或者碰一下鼠标键盘，它就停。</p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="rid" value="{rid}">
@@ -189,12 +189,38 @@ REMOTE_TOOLS = [
      'description': 'Close the Chrome window you opened. Do this when you are done.',
      'inputSchema': {'type': 'object', 'properties': {}},
      'annotations': {'readOnlyHint': False, 'destructiveHint': False, 'openWorldHint': True}},
+    # 11.9 桌面那四样：浏览器以外的软件也碰得到。坐标是最近一张 screen_look 上的（1280 宽），回来带一张做完以后的图
+    {'name': 'screen_click', 'title': 'Click on the screen',
+     'description': 'Click anywhere on the screen, including apps outside the browser. x, y are pixels in the latest screen_look '
+                    'screenshot (1280 wide). Returns a screenshot taken right after.',
+     'inputSchema': {'type': 'object', 'properties': {
+         'x': {'type': 'number'}, 'y': {'type': 'number'},
+         'button': {'type': 'string', 'enum': ['left', 'right']}, 'double': {'type': 'boolean'}}, 'required': ['x', 'y']},
+     'annotations': {'readOnlyHint': False, 'openWorldHint': True}},
+    {'name': 'screen_scroll', 'title': 'Scroll on the screen',
+     'description': 'Turn the mouse wheel at x, y (screenshot pixels). amount: notches, positive scrolls down, negative up (default 3). '
+                    'Returns a screenshot taken right after.',
+     'inputSchema': {'type': 'object', 'properties': {'x': {'type': 'number'}, 'y': {'type': 'number'}, 'amount': {'type': 'number'}},
+                     'required': ['x', 'y']},
+     'annotations': {'readOnlyHint': False, 'destructiveHint': False, 'openWorldHint': True}},
+    {'name': 'screen_key', 'title': 'Press keys',
+     'description': 'Press a key or combo in whatever window is in front, e.g. enter, esc, tab, backspace, up, pagedown, f5, '
+                    'ctrl+c, ctrl+shift+t, alt+tab, win. Returns a screenshot taken right after.',
+     'inputSchema': {'type': 'object', 'properties': {'key': {'type': 'string'}}, 'required': ['key']},
+     'annotations': {'readOnlyHint': False, 'openWorldHint': True}},
+    {'name': 'screen_type', 'title': 'Type text',
+     'description': 'Type text into whatever has keyboard focus (click the field first). Returns a screenshot taken right after.',
+     'inputSchema': {'type': 'object', 'properties': {'text': {'type': 'string'}}, 'required': ['text']},
+     'annotations': {'readOnlyHint': False, 'openWorldHint': True}},
 ]
 REMOTE_MAP = {'screen_look': 'look', 'browser_open': 'open', 'browser_state': 'state', 'browser_extract': 'extract',
            'browser_click': 'click', 'browser_type': 'type', 'browser_keys': 'keys', 'browser_scroll': 'scroll',
-           'browser_back': 'back', 'browser_close': 'close'}
+           'browser_back': 'back', 'browser_close': 'close',
+           'screen_click': 'sclick', 'screen_scroll': 'sscroll', 'screen_key': 'skey', 'screen_type': 'stype'}
 INSTRUCTIONS = ("These tools act on the user's own Windows computer, live, while she watches. Look before acting. "
                 "If a tool says the user is holding control or using the computer, stop and tell them; do not retry in a loop. "
+                "For web pages prefer the browser_* tools (numbered elements are more precise); for anything outside the browser "
+                "use screen_click / screen_scroll / screen_key / screen_type with coordinates from the latest screen_look. "
                 "Never buy, pay, delete, or send messages/posts on their behalf unless they explicitly asked for that exact action.")
 
 

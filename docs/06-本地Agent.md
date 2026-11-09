@@ -108,7 +108,7 @@ Invoke-RestMethod http://127.0.0.1:5260/agent/hold -Method Post -ContentType 'ap
 | 换字幕 | `POST /api/agent/desk/say`：`{"s":"在干嘛"}` | |
 | 收尾 | `POST /api/agent/desk/done`：`{"s":"做成了什么"}` | |
 | 人在不在 | `GET /api/agent/desk/idle` | 离人上次碰鼠标键盘多久、「我来」按没按着 |
-| 网页 | `POST /api/agent/desk/browser`：`{"tool":"open","args":{"url":"https://example.com"}}`。tool 有 look、open（url）、state、extract、click（target）、type（target、text）、keys（key）、scroll（direction：up／down）、back、close，跟第 7 章那十样是同一套 | 跟连接器回的一样 |
+| 网页 | `POST /api/agent/desk/browser`：`{"tool":"open","args":{"url":"https://example.com"}}`。tool 有 look、open（url）、state、extract、click（target）、type（target、text）、keys（key）、scroll（direction：up／down）、back、close，跟第 7 章里看屏幕和网页那几样是同一套 | 跟连接器回的一样 |
 
 被挡回来的样子：
 
