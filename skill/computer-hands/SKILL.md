@@ -34,12 +34,7 @@ OpenCLI 自己的用法读它带的：`opencli skills read opencli-usage`（找�
 - 闲 5 分钟算这一趟干完。小程序重开会丢掉正在干的那一趟，要重开先 `done`。
 - 截图里看见密码、聊天记录，不抄进回话，也不写进思考。
 
-## 你住在 VPS 上的话（desk 门）
-
-- 够不着 5260，就在 VPS 本机走同一套：`http://127.0.0.1:39260/api/agent/desk/<shot|act|say|done|idle|browser>`，每一下带头 `X-Desk-Key: <~/.desk.key 里那串>`。不走域名。
-- `shot` 直接回 jpg，`scale` 在回头的 `X-Scale` 里；`act`／`say`／`done` 的 JSON 跟上面一样。
-- 上网用 `POST browser {tool, args}`（open／state／click／type……，跟连接器的 browser_* 一样），先 `state` 读编号再点。
-- 409 跟上面一样停手等。404＝主人把门关了，别找别的路进来。
+- 你跑在 VPS 上、够不着 5260 的话，再读同目录的 `vps.md`；跑在这台电脑上就不用。
 
 ## 不做的
 

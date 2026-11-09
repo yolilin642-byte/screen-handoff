@@ -98,6 +98,7 @@ Invoke-RestMethod http://127.0.0.1:5260/agent/hold -Method Post -ContentType 'ap
    不到 16 位字母数字的不算数，照抄例子文件里那句尖括号说明也不算，门照样关着。小程序每一下都现读这个文件，不用重起。
 2. VPS 上把同一把钥匙存成只有 Agent 读得到的文件，比如 `~/.desk.key`，`chmod 600`。
 3. Caddy 上把 `/api/agent/desk*` 挡在外面（第 5 章那段已经写了）。小程序自己也只认从 VPS 本机进来的请求，经域名来的就算漏过了 Caddy，也是 403。
+4. 说明书照第 3 节交给它，整个 `skill/computer-hands/` 文件夹一起给。VPS 这条路单独写在里面的 `vps.md`，SKILL.md 只留一句「够不着 5260 再去读它」，跑在电脑上的 AI 不用白读这一段。
 
 在 VPS 上这么用（`K=$(cat ~/.desk.key)`，POST 都要带 `-H 'Content-Type: application/json'`）：
 
