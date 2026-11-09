@@ -1,0 +1,6 @@
+{
+  "_": "抄一份成 deploy/door.json 再填。别提交进仓库（.gitignore 已经挡了）。",
+  "h": "<门牌：openssl rand -hex 12>",
+  "w": "<门钥匙：openssl rand -hex 16>",
+  "g": "<连接器钥匙：openssl rand -hex 16>"
+}

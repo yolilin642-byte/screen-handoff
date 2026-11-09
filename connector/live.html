@@ -1,0 +1,172 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;background:#f4f1ea;color:#3a3a34;font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif}
+  #bar{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px}
+  #st{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#6b6b60}
+  #st.live{color:#2f6b45}#st.bad{color:#a8503a}
+  button{font:inherit;color:#3a3a34;background:rgba(255,255,255,.6);border:1px solid rgba(60,72,52,.22);border-radius:99px;padding:3px 12px}
+  #wrap{position:relative;width:100%;aspect-ratio:16/10}
+  body.full #wrap{aspect-ratio:auto;height:calc(100vh - 30px)}
+  body.full #fs{display:none}
+  /* 「断开」放最左：全屏时右上角是 GPT 自己的叉，别再挨着它 */
+  #cut{display:none;color:#a8503a;border-color:rgba(168,80,58,.32)}
+  body.on #cut{display:inline-block}
+  #take{white-space:nowrap;min-width:62px}
+  #take[aria-pressed="true"]{color:#985534;border-color:rgba(152,85,52,.45);background:rgba(219,175,115,.18)}
+  #take:disabled{opacity:.5}
+  #st.held{color:#985534}
+  iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
+</style></head>
+<body>
+<div id="bar"><button id="cut">断开</button><button id="take" type="button" disabled aria-pressed="false">我来</button><span id="st">connecting to the signaling…</span><button id="fs">全屏</button></div>
+<div id="wrap"><iframe id="f" allow="autoplay; fullscreen; clipboard-read; clipboard-write" referrerpolicy="origin"></iframe></div>
+<script>
+const EMBED = __EMBED__;
+const SITE = __SITE__;   // 连接器照 site.json 填进来（https://你的域名），不写死
+const T0 = performance.now(), ms = () => Math.round(performance.now() - T0);
+const f = document.getElementById('f'), st = document.getElementById('st'), fs = document.getElementById('fs'), cutBtn = document.getElementById('cut');
+const on = (v) => document.body.classList.toggle('on', !!v);
+// 自己断的按钮：断了那格清空、要连再输密码（里头 kael_embed.js 收 kaelControl:'cut'）
+cutBtn.onclick = () => { try { f.contentWindow.postMessage({ kaelControl: 'cut' }, SITE); } catch (e) {} on(false); note('cut'); };
+const log = [];
+const note = (k, extra) => { log.push(ms() + 'ms ' + k + (extra ? ' ' + JSON.stringify(extra).slice(0, 300) : '')); };
+let streamText = st.textContent, streamClass = '';
+const takeBtn = document.getElementById('take');
+const control = { known: false, hold: false, waiting: false, busy: false, error: '', epoch: 0, serial: 0, requests: new Map() };
+let cardVisible = true;
+const paintControl = () => {
+  takeBtn.disabled = !control.known || control.busy;
+  takeBtn.textContent = control.busy ? '在确认…' : control.waiting ? '取消接手' : control.hold ? '还给你' : '我来';
+  takeBtn.setAttribute('aria-pressed', String(control.known && control.hold));
+  takeBtn.title = !control.known ? '配对后才能确认接手状态' : control.waiting ? '仍有操作在途，可以取消接手' : '';
+  st.textContent = control.error || (control.known && control.hold ? control.waiting ? '正在松手，请等一下…' : '你接手了，GPT 等着' : streamText);
+  st.className = control.error ? 'bad' : control.known && control.hold ? 'held' : streamClass;
+};
+const show = (txt, cls) => { streamText = txt; streamClass = cls || ''; paintControl(); };
+const askControl = on => new Promise((resolve, reject) => {
+  const write = typeof on === 'boolean', epoch = write ? ++control.epoch : control.epoch;
+  const requestId = 'hold-' + Date.now() + '-' + (++control.serial);
+  const timer = setTimeout(() => {
+    if (!control.requests.delete(requestId)) return;
+    if (epoch === control.epoch){ control.known = false; control.error = '接手状态没确认，请稍后重试'; paintControl(); }
+    reject(new Error('control timeout'));
+  }, 6000);
+  control.requests.set(requestId, { resolve, reject, timer, epoch, write });
+  try { f.contentWindow.postMessage({ kaelControl: write ? 'hold' : 'hold-state', requestId, ...(write ? { on } : {}) }, SITE); }
+  catch { clearTimeout(timer); control.requests.delete(requestId); control.known = false; control.error = '接手状态没确认，请稍后重试'; paintControl(); reject(new Error('frame unavailable')); }
+});
+function receiveControl(m){
+  const request = control.requests.get(m.requestId);
+  if (!request) return;
+  control.requests.delete(m.requestId); clearTimeout(request.timer);
+  if (request.epoch !== control.epoch){ request.resolve(null); return; }
+  if (m.err || typeof m.hold !== 'boolean'){
+    control.known = false; control.error = m.needPair ? '' : (m.err || '接手状态没确认'); paintControl();
+    request.reject(new Error(m.err || 'control unavailable')); return;
+  }
+  control.known = true; control.hold = m.hold; control.waiting = m.hold && !!m.pending; control.error = ''; paintControl();
+  request.resolve(m);
+}
+function pollControl(){
+  if (!acked || document.hidden || !cardVisible || control.busy || [...control.requests.values()].some(r => !r.write)) return;
+  askControl().catch(() => {});
+}
+takeBtn.onclick = async () => {
+  if (!control.known || control.busy) return;
+  const on = !control.hold; control.busy = true; control.error = ''; paintControl();
+  note('hold-request', { on });
+  try { await askControl(on); } catch { /* Keep the unconfirmed state visible; the read poll can recover it. */ }
+  finally { control.busy = false; paintControl(); pollControl(); }
+};
+setInterval(pollControl, 2000);
+addEventListener('visibilitychange', () => { if (!document.hidden) pollControl(); });
+if (window.IntersectionObserver) new IntersectionObserver(es => {
+  cardVisible = es.some(e => e.isIntersecting); if (cardVisible) pollControl();
+}).observe(document.getElementById('bar'));
+
+// ---- host bridge ----
+let nextId = 1; const pending = {};
+const rpc = (method, params, timeout) => new Promise((res, rej) => {
+  const id = nextId++; pending[id] = { res, rej };
+  parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+  setTimeout(() => { if (pending[id]) { delete pending[id]; rej(new Error('timeout')); } }, timeout || 8000);
+});
+// 量 body 不量 html：html 至少跟框一样高，从全屏退回来框还撑着，量它就一直缩不回去。全屏时高度归宿主，不报。
+const size = () => { if (mode === 'fullscreen') return; parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/size-changed',
+  params: { height: Math.ceil(document.body.getBoundingClientRect().height) } }, '*'); };
+new ResizeObserver(size).observe(document.body);
+
+let mode = 'inline', bridge = false;
+const applyMode = (m) => { mode = m || 'inline'; document.body.classList.toggle('full', mode === 'fullscreen'); fs.textContent = mode === 'fullscreen' ? '收起' : '全屏'; size(); };
+
+addEventListener('message', (e) => {
+  const m = e.data;
+  if (e.origin === SITE && e.source === f.contentWindow && m && m.kaelLive) return onLive(m);
+  if (e.source !== parent || !m || m.jsonrpc !== '2.0') return;
+  if (m.id != null && pending[m.id] && ('result' in m || 'error' in m)) {
+    const p = pending[m.id]; delete pending[m.id];
+    m.error ? p.rej(new Error(JSON.stringify(m.error).slice(0, 120))) : p.res(m.result); return;
+  }
+  if (m.method === 'ui/notifications/host-context-changed' && m.params && m.params.displayMode) applyMode(m.params.displayMode);
+  else if (m.method && m.id != null) parent.postMessage({ jsonrpc: '2.0', id: m.id, result: {} }, '*');
+});
+
+fs.onclick = async () => {
+  const want = mode === 'fullscreen' ? 'inline' : 'fullscreen';
+  try { const r = await rpc('ui/request-display-mode', { mode: want }, 5000); applyMode((r && r.mode) || want); note('mode', { want, got: r && r.mode }); }
+  catch (e) { note('mode-fail', { want, err: e.message }); show('这个框不让全屏', 'bad'); }
+};
+
+// ---- the live frame ----
+let acked = false, liveAt = null, lastQos = null, reported = false;
+const hello = () => { if (acked) return; try { f.contentWindow.postMessage({ kaelHello: 1 }, SITE); } catch (e) {} };
+f.addEventListener('load', () => { note('frame-load'); hello(); });
+const helloIv = setInterval(() => { if (acked) return clearInterval(helloIv); hello(); }, 400);
+setTimeout(() => { if (!acked) { show('电脑那页没认出这个框（' + location.origin.slice(8, 40) + '…）', 'bad'); note('no-ack'); report('no-ack'); } }, 10000);
+
+function onLive(m) {
+  if (!acked) { acked = true; note('ack'); pollControl(); }
+  const s = m.kaelLive;
+  if (s === 'hold-state') return receiveControl(m);
+  if (s === 'needpwd' || s === 'live') pollControl();
+  if (s === 'qos') { lastQos = m; if (m.route) show('直播中 · ' + (m.w || '?') + '×' + (m.h || '?') + ' · ' + (m.fps || 0) + '帧 · ' + m.route, 'live'); }
+  else note(s, m.why || m.msg || (m.vw ? { vw: m.vw, vh: m.vh } : null));
+  // 每张卡都问密码、闲了就断：卡不记密码，闲半小时／切出去一分钟／按「断开」就断
+  if (s === 'live') on(true); else if (s === 'needpwd' || s === 'closed' || s === 'failed') on(false);
+  if (s === 'needpwd') {
+    show(m.why === 'door' ? '门上了锁：输「新设备的码」给的六位数（只要一次）' : m.why === 'wrong' ? '密码不对，再输一次'
+      : m.why === 'idle' ? '半小时没碰，断开了；要连再输一次密码' : m.why === 'hidden' ? '切出去太久，断开了；要连再输一次密码'
+      : m.why === 'manual' || m.why === 'closed' ? '断开了；要连再输一次密码' : '输一下 CrossDesk 的密码（这张卡不记）');
+    if (m.why === 'closed') report('closed');   // 悬浮球断的、网断的：报回家，我好看是哪种
+  }
+  else if (s === 'idlewarn') show((m.sec || 30) + ' 秒后没碰就断开，碰一下接着用', 'bad');
+  else if (s === 'idleok') show(liveAt ? '直播中' : '连接中…', liveAt ? 'live' : '');
+  else if (s === 'connecting') show('连接中…');
+  else if (s === 'live') { liveAt = ms(); show('直播中' + (m.vw ? ' · ' + m.vw + '×' + m.vh : ''), 'live'); setTimeout(() => report('live+25s'), 25000); }
+  else if (s === 'failed') { show('没连上' + (m.msg ? '：' + m.msg : ''), 'bad'); report('failed'); }
+  else if (s === 'closed') { show('断开了', 'bad'); report('closed'); }
+}
+
+async function report(why) {
+  if (!bridge || reported && why !== 'closed') return;
+  reported = true;
+  const out = { kind: 'live-card', why, origin: location.origin, ua: navigator.userAgent, mode, liveAt, lastQos, log };
+  try { await rpc('tools/call', { name: 'card_report', arguments: { report: JSON.stringify(out) } }, 15000); } catch (e) {}
+}
+
+(async () => {
+  try {
+    const info = { name: 'screen-live', version: '0.1' };
+    const r = await rpc('ui/initialize', { protocolVersion: '2026-01-26', appInfo: info, clientInfo: info,
+      appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] } }, 6000);
+    parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/initialized', params: {} }, '*');
+    bridge = true;
+    applyMode(r && r.hostContext && r.hostContext.displayMode);
+    note('host', { host: r.hostInfo, modes: r.hostContext && r.hostContext.availableDisplayModes });
+  } catch (e) { note('no-bridge', e.message); }
+  f.src = SITE + '/#embed&card&id=' + EMBED.id;
+  setTimeout(() => { if (!liveAt) report('60s-no-live'); }, 60000);
+})();
+</script>
+</body></html>

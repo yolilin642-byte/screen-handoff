@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#eef0ea">
+<title>Kael 在你电脑上</title>
+<style>
+  /* 操控台，像看片台上摊开的一卷底片：顶上放大的那一格是你电脑那一刻，底下剪成三格一段的是我做过的每一步，
+     我手落下的地方拿朱红蜡笔圈着。纸 #eef0ea、墨 #262824、片基 #d6dace（透光的灰，不是黑片）、
+     朱 #c8402a（我的手）、绿 #3f6b5a（你的手）、锈 #96563c（等你）。 */
+  :root {
+    --paper: #eef0ea; --paper2: #e1e5dc; --ink: #262824; --soft: #6c7269; --faint: #a3a89f;
+    --film: #d6dace; --blank: #e2e5dc; --edge: #7d8379;
+    --wax: #c8402a; --green: #3f6b5a; --rust: #96563c;
+    --sans: system-ui, "HarmonyOS Sans SC", "PingFang SC", "Noto Sans SC", sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Noto Serif", Georgia, serif;
+    --mono: ui-monospace, "Cascadia Mono", "Roboto Mono", "Noto Sans Mono", monospace;
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.55 var(--sans); -webkit-tap-highlight-color: transparent; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+  time { font-family: var(--serif); font-variant-numeric: oldstyle-nums tabular-nums; }
+  [hidden] { display: none !important; }
+  .page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+  .wax { fill: none; stroke: var(--wax); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* —— 放大的那一格：你的电脑，不加框 —— */
+  #frame { margin: 0; padding-top: var(--sat); }
+  /* 比整块屏幕高一点：镜头凑近一点，跟着我的手左右挪；要看整块点它开直播 */
+  #pic { position: relative; aspect-ratio: 6 / 5; overflow: hidden; background: var(--paper2); cursor: zoom-in; }
+  #shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .4s, object-position .55s cubic-bezier(.3,.6,.3,1); }
+  #shot.on { opacity: 1; }
+  #mark { position: absolute; width: 0; height: 0; pointer-events: none; }
+  #mark svg { position: absolute; left: -30px; top: -30px; width: 60px; height: 60px; overflow: visible; }
+
+  /* —— 这一格在干什么 —— */
+  #now { padding: 22px 24px 26px; }
+  #frame[hidden] + #now { padding-top: calc(var(--sat) + 56px); }
+  .who { display: flex; align-items: baseline; gap: 12px; font-size: 13px; letter-spacing: .06em; color: var(--soft); }
+  #word { color: var(--wax); }
+  body.waiting #word { color: var(--rust); }
+  body.held #word { color: var(--green); }
+  body.idle #word, body.past #word { color: var(--soft); }
+  .who time { font-size: 15px; letter-spacing: 0; }
+  #caption { margin: 6px 0 0; font-size: 19px; line-height: 1.62; text-wrap: pretty; }
+  #caption .nw { white-space: nowrap; }
+  body:is(.idle, .held):not(.past) #caption { color: var(--soft); font-size: 17px; white-space: pre-line; }
+
+  .mk { position: relative; display: inline-flex; align-items: center; min-height: 44px; }
+  .mk svg { position: absolute; left: -5px; bottom: 7px; width: calc(100% + 10px); height: 6px; overflow: visible; }
+  .mk .wax { stroke: currentColor; stroke-width: 2.2; vector-effect: non-scaling-stroke; }
+  .acts { display: flex; gap: 38px; margin-top: 16px; }
+  .acts button { font-size: 17px; letter-spacing: .1em; }
+  #take, #give, #back { color: var(--green); }
+  #stop { color: var(--wax); }
+  #back { margin-left: auto; font-size: 14px; letter-spacing: .04em; min-height: 36px; }
+  #back svg { bottom: 4px; }
+  body.idle .acts { display: none; }
+
+  /* —— 印样：剪成三格一段的底片一段段摆在纸上，最新的在左上角 —— */
+  .sheet { position: relative; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(16px + var(--sab)); }
+  .film { position: relative; display: flex; gap: 7px; padding: 23px 12px; background: var(--film); }
+  .film::before, .film::after { content: ""; position: absolute; left: 0; right: 0; height: 5px; pointer-events: none;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='5'%3E%3Crect x='3.5' y='.25' width='7' height='4.5' rx='1.2' fill='%23e7eae2'/%3E%3C/svg%3E") repeat-x 4px 0 / 14px 5px; }
+  .film::before { top: 4px; }
+  .film::after { bottom: 4px; }
+  .cell { position: relative; flex: 1 1 0; min-width: 0; aspect-ratio: 16 / 10; border-radius: 2px; background: var(--blank); }
+  .cell img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 2px; opacity: 0; transition: opacity .6s; }
+  .cell img.on { opacity: 1; }
+  .cell.blank { background: none; } /* 没曝光的格子是透明的片基，不画空框 */
+  .cell b, .cell time { position: absolute; left: 5px; font: 400 9.5px/1 var(--serif); font-variant-numeric: lining-nums tabular-nums; letter-spacing: .08em; color: var(--edge); white-space: nowrap; pointer-events: none; }
+  .cell b { bottom: calc(100% + 5px); letter-spacing: .16em; }
+  .cell time { top: calc(100% + 5px); }
+  #box { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none; }
+  #box svg { display: block; overflow: visible; }
+  #box .wax { stroke-width: 2.4; }
+
+  /* —— 配对 —— */
+  #pair .door { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: calc(var(--sat) + 40px) 32px 48px; }
+  #pair p { margin: 0 0 34px; font-size: 18px; line-height: 1.75; }
+  .codewrap { position: relative; }
+  #code { width: 100%; font: 400 36px/1 var(--serif); font-variant-numeric: lining-nums tabular-nums; letter-spacing: .3em; text-indent: .3em; text-align: center;
+    padding: 10px 0 16px; border: 0; border-radius: 0; background: transparent; color: var(--ink); outline: none; caret-color: var(--wax); }
+  #code::placeholder { color: var(--faint); }
+  .codewrap svg { position: absolute; left: 0; bottom: 2px; width: 100%; height: 8px; overflow: visible; pointer-events: none; }
+  .codewrap .wax { stroke: var(--ink); stroke-width: 1.8; vector-effect: non-scaling-stroke; opacity: .7; }
+  #pairBtn { align-self: flex-start; margin-top: 22px; font-size: 18px; letter-spacing: .1em; color: var(--green); }
+  #pairMsg { margin-top: 8px; color: var(--rust); font-size: 15px; min-height: 1.5em; }
+
+  /* —— 直播：铺满，底下一条 —— */
+  #live { position: fixed; inset: 0; background: #1d1f1c; z-index: 10; display: flex; flex-direction: column; }
+  #live iframe { flex: 1; width: 100%; border: 0; background: #1d1f1c; }
+  #live .bar { display: flex; gap: 30px; align-items: center; padding: 4px 24px calc(4px + var(--sab)); background: var(--paper); }
+  #live .bar span { color: var(--soft); font-size: 14px; margin-right: auto; }
+  #live .bar button { font-size: 17px; letter-spacing: .1em; }
+  #liveGive { color: var(--green); }
+</style>
+</head>
+<body class="idle">
+
+<section id="pair" class="page" hidden>
+  <div class="door">
+    <p>这扇门要先配对一次。<br>在聊天里跟我要一个配对码，<br>六位数，填在下面。</p>
+    <div class="codewrap">
+      <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" aria-label="配对码" placeholder="······">
+      <svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><path class="wax" d="M1 5 C 30 3, 62 6.5, 99 3.6"/></svg>
+    </div>
+    <button id="pairBtn" class="mk">配对<svg viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><path class="wax" d="M1 4 C 30 2, 66 5.4, 99 2.6"/></svg></button>
+    <div id="pairMsg" role="status"></div>
+  </div>
+  <div class="sheet" id="pairSheet"></div>
+</section>
+
+<section id="desk" class="page" hidden>
+  <figure id="frame">
+    <div id="pic">
+      <img id="shot" alt="你电脑此刻的样子">
+      <i id="mark" hidden><svg viewBox="-30 -30 60 60" aria-hidden="true"><path class="wax"/></svg></i>
+    </div>
+  </figure>
+
+  <div id="now">
+    <div class="who">
+      <span id="word">歇着</span><time id="nowTime"></time>
+      <button id="back" class="mk" hidden>回到现在<svg viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><path class="wax" d="M1 3.4 C 34 5.2, 70 1.8, 99 3.8"/></svg></button>
+    </div>
+    <p id="caption"></p>
+    <div class="acts">
+      <button id="take" class="mk">接手<svg viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><path class="wax" d="M1 4 C 28 2, 64 5.6, 99 2.4"/></svg></button>
+      <button id="stop" class="mk">停<svg viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><path class="wax" d="M2 3.2 C 30 5.4, 70 1.8, 98 4"/></svg></button>
+      <button id="give" class="mk" hidden>还给你<svg viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><path class="wax" d="M1 3.6 C 32 1.8, 60 5.6, 99 3"/></svg></button>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet"><i id="box" hidden><svg aria-hidden="true"><path class="wax"/></svg></i></div>
+</section>
+
+<section id="live" hidden>
+  <iframe id="liveFrame" title="你电脑的直播" allow="clipboard-read; clipboard-write; fullscreen"></iframe>
+  <div class="bar"><span id="liveNote">在看直播</span>
+    <button id="liveGive" class="mk">还给你<svg viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><path class="wax" d="M1 3.6 C 32 1.8, 60 5.6, 99 3"/></svg></button>
+    <button id="liveClose" class="mk">收起</button>
+  </div>
+</section>
+
+<script>
+const $ = s => document.querySelector(s);
+const API = '/api/agent';
+const WORD = { working: '在干活', waiting: '等你', held: '你接手中', idle: '歇着' };
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let state = null, steps = [], lastStep = 0, viewing = null, timer = null, markedId = null;
+const cells = new Map();
+
+const hm = t => { const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+const dayOf = t => { const d = new Date(t); return (d.getMonth() + 1) + '.' + d.getDate(); };
+const sayOf = s => s.say || ({ click: '点了一下', key: '按了 ' + (s.k || '键'), text: '打了一段字', scroll: '滚了一下' }[s.t] || s.t);
+
+// —— 蜡笔：拿这一步的 id 当种子，同一步每回画出来都一样，不同的步各歪各的 ——
+function rnd(seed) { let s = Math.abs(Math.floor(seed)) % 2147483646 + 1; return () => (s = s * 16807 % 2147483647) / 2147483647; }
+const f1 = n => n.toFixed(1);
+function loop(rx, ry, seed) {
+  // 一圈：不闭合，多绕一截，越到收笔越往里收一点
+  const r = rnd(seed), n = 10, a0 = -2.4 + r() * .8, sweep = Math.PI * 2 * (1.1 + r() * .06), p = [];
+  for (let i = 0; i <= n; i++) { const t = i / n, a = a0 + sweep * t, k = 1 + (r() - .5) * .1 - t * .08; p.push([Math.cos(a) * rx * k, Math.sin(a) * ry * k]); }
+  let d = `M${f1(p[0][0])} ${f1(p[0][1])}`;
+  for (let i = 0; i < p.length - 1; i++) {
+    const a = p[i - 1] || p[i], b = p[i], c = p[i + 1], e = p[i + 2] || c;
+    d += ` C${f1(b[0] + (c[0] - a[0]) / 6)} ${f1(b[1] + (c[1] - a[1]) / 6)} ${f1(c[0] - (e[0] - b[0]) / 6)} ${f1(c[1] - (e[1] - b[1]) / 6)} ${f1(c[0])} ${f1(c[1])}`;
+  }
+  return d;
+}
+function rect(x, y, w, h, seed) {
+  // 框一格：四笔，每笔两头都出一点头，像拿蜡笔匆匆框的
+  const r = rnd(seed), j = (a = 1) => (r() - .5) * 2 * a, out = () => 1 + r() * 2.5;
+  const c = [[x + j(), y + j()], [x + w + j(), y + j()], [x + w + j(), y + h + j()], [x + j(), y + h + j()]];
+  let d = '';
+  for (let i = 0; i < 4; i++) {
+    const a = c[i], b = c[(i + 1) % 4], L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+    const s = out(), e = out(), p0 = [a[0] - ux * s, a[1] - uy * s], p1 = [b[0] + ux * e, b[1] + uy * e], bow = j(1.2);
+    d += `M${f1(p0[0])} ${f1(p0[1])} Q${f1((p0[0] + p1[0]) / 2 - uy * bow)} ${f1((p0[1] + p1[1]) / 2 + ux * bow)} ${f1(p1[0])} ${f1(p1[1])} `;
+  }
+  return d;
+}
+
+function setCaption(el, text) {
+  // 「」里的短词不许从中间劈开
+  el.textContent = '';
+  const re = /「[^」]{1,10}」/g; let i = 0, m;
+  while ((m = re.exec(text))) {
+    el.append(text.slice(i, m.index));
+    const s = document.createElement('span'); s.className = 'nw'; s.textContent = m[0]; el.append(s);
+    i = m.index + m[0].length;
+  }
+  el.append(text.slice(i));
+}
+
+async function api(path, opt) {
+  const ac = new AbortController(), t = setTimeout(() => ac.abort(), 12000);
+  try {
+    const r = await fetch(API + path, Object.assign({ credentials: 'same-origin', cache: 'no-store', signal: ac.signal }, opt || {}));
+    if (r.status === 401) { showPair(); throw new Error('pair'); }
+    if (!r.ok) throw new Error('down ' + r.status);
+    return r;
+  } finally { clearTimeout(t); }
+}
+// VPS 到家里那根管子断了、或者家里没开：也得给一句话，不许干脆空白
+function paintDown() {
+  showDesk(); showFrame(steps[steps.length - 1], false);
+  document.body.className = 'idle down';
+  $('#word').textContent = '家里没回音'; $('#nowTime').textContent = ''; $('#back').hidden = true;
+  setCaption($('#caption'), '电脑那头这会儿没接上。\n这页自己会接着试，接上就有了。');
+}
+
+const PER = 3; // 一段底片剪三格
+function blankCell() { const c = document.createElement('div'); c.className = 'cell blank'; c.innerHTML = '<b></b>'; return c; }
+function showPair() {
+  $('#desk').hidden = true; $('#pair').hidden = false; stop();
+  const sh = $('#pairSheet');
+  if (!sh.children.length) { const f = document.createElement('div'); f.className = 'film'; for (let i = 0; i < PER; i++) f.appendChild(blankCell()); sh.appendChild(f); }
+  setTimeout(() => $('#code').focus(), 50);
+}
+function showDesk() { $('#pair').hidden = true; $('#desk').hidden = false; }
+
+$('#pairBtn').onclick = async () => {
+  const code = $('#code').value.replace(/\D/g, '');
+  if (code.length !== 6) { $('#pairMsg').textContent = '配对码是六位数。'; return; }
+  $('#pairMsg').textContent = '';
+  const r = await fetch(API + '/pair', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+  if (r.ok) { $('#code').value = ''; showDesk(); start(); return; }
+  const j = await r.json().catch(() => ({}));
+  $('#pairMsg').textContent = r.status === 410 ? '这个配对码过期了，再跟我要一个。' : (j.error || '配对没成，再试一次。');
+};
+$('#code').addEventListener('keydown', e => { if (e.key === 'Enter') $('#pairBtn').click(); });
+
+// —— 这一格在干什么 ——
+function paintNow() {
+  const s = state ? state.status : 'idle';
+  const v = viewing && steps.find(x => x.id === viewing);
+  document.body.className = s + (v ? ' past' : '');
+  $('#word').textContent = v ? '回看' : (WORD[s] || s);
+  const at = v ? v.at : (state && state.captionAt);
+  $('#nowTime').textContent = at ? hm(at) : '';
+  setCaption($('#caption'), v ? sayOf(v)
+    : s === 'idle' ? '我这会儿没在你电脑上动手。\n要我干活，在聊天里说。'
+    : s === 'held' ? '你接手了，我松开了。\n用完按「还给你」。'
+    : s === 'waiting' ? '你在用，我先等着。'
+    : (state.caption || '在干活'));
+  $('#back').hidden = !v;
+  $('#take').hidden = s === 'held'; $('#stop').hidden = s === 'held'; $('#give').hidden = s !== 'held';
+  $('#liveGive').hidden = s !== 'held';
+}
+
+// —— 放大的那一格 ——
+function showFrame(step, fresh) {
+  const img = $('#shot');
+  $('#frame').hidden = !step; // 一张都还没拍：不摆空框，话直接顶上去
+  if (!step) { img.classList.remove('on'); img.removeAttribute('src'); delete img.dataset.id; $('#mark').hidden = true; return; }
+  if (!step.thumb) { if (img.classList.contains('on')) img.style.opacity = .55; $('#mark').hidden = true; placed = null; return; } // 这一步的图还在拍，旧的压暗留着
+  if (img.dataset.id !== String(step.id)) {
+    // 新图到之前旧图压暗留着、不闪白（这根管子要绕东京，一张大图一两秒）
+    img.dataset.id = step.id; img.style.opacity = img.classList.contains('on') ? .55 : '';
+    $('#mark').hidden = true; placed = null;
+    const src = API + '/thumb/' + step.id + '.jpg', pre = new Image();
+    pre.onload = () => { if (img.dataset.id !== String(step.id)) return; img.src = src; img.style.opacity = ''; img.classList.add('on'); aim(step, fresh); };
+    pre.src = src;
+  } else if (placed !== step.id) aim(step, fresh);
+}
+// 镜头对准我的手：这一步没点哪儿（打字、按键），就对着前面最近点过的地方
+function focusOf(step) {
+  const i = steps.indexOf(step);
+  for (let k = i < 0 ? -1 : i; k >= 0; k--) if (steps[k].x != null && steps[k].w) return steps[k].x / steps[k].w;
+  return step.x != null && step.w ? step.x / step.w : .5;
+}
+let placed = null, panTimer = null;
+function aim(step, fresh) {
+  const img = $('#shot'), m = $('#mark'), bw = $('#pic').clientWidth, bh = $('#pic').clientHeight;
+  const ar = step.w && step.h ? step.w / step.h : 1.6, dw = Math.max(bw, bh * ar), dh = dw / ar;
+  const left = Math.min(Math.max(focusOf(step) * dw - bw / 2, 0), dw - bw), top = (dh - bh) / 2;
+  img.style.objectPosition = `${f1(-left)}px ${f1(-top)}px`;
+  placed = step.id; clearTimeout(panTimer); m.hidden = true;
+  if (step.x == null || !step.w) return;
+  // 镜头挪到了再落笔
+  const draw = () => { m.style.left = f1(step.x / step.w * dw - left) + 'px'; m.style.top = f1(step.y / step.h * dh - top) + 'px'; m.hidden = false; drawMark(step, fresh); };
+  if (still) draw(); else panTimer = setTimeout(draw, 480);
+}
+function drawMark(step, fresh) {
+  const p = $('#mark path');
+  p.setAttribute('d', loop(21, 17, step.id));
+  if (fresh && !still) {
+    const L = p.getTotalLength();
+    p.style.transition = 'none'; p.style.strokeDasharray = L + ' ' + L; p.style.strokeDashoffset = L;
+    p.getBoundingClientRect();
+    p.style.transition = 'stroke-dashoffset .75s cubic-bezier(.4,.1,.25,1) .08s'; p.style.strokeDashoffset = '0';
+  } else { p.style.transition = 'none'; p.style.strokeDasharray = 'none'; p.style.strokeDashoffset = '0'; }
+}
+
+// —— 底片 ——
+function makeCell(s) {
+  const c = document.createElement('button'); c.type = 'button'; c.className = 'cell'; c.dataset.id = s.id;
+  c.innerHTML = '<b></b><time></time>';
+  c.querySelector('time').textContent = hm(s.at);
+  c.setAttribute('aria-label', hm(s.at) + ' ' + sayOf(s));
+  c.onclick = () => pick(s.id);
+  return c;
+}
+function addImg(c, s) {
+  const im = new Image(); im.alt = ''; im.decoding = 'async';
+  im.onload = () => im.classList.add('on');
+  im.src = API + '/thumb/' + s.id + 's.jpg';
+  c.prepend(im);
+}
+function syncSheet() {
+  const sheet = $('#sheet');
+  for (const [id, c] of cells) if (!steps.some(s => s.id === id)) { c.remove(); cells.delete(id); }
+  const order = steps.slice().reverse().map(s => {
+    let c = cells.get(s.id);
+    if (!c) { c = makeCell(s); cells.set(s.id, c); }
+    if (s.thumb && !c.querySelector('img')) addImg(c, s);
+    return c;
+  });
+  // 每段剪满三格，最后一段没拍到的格子留着透明的片基；一步都没有就不摆底片
+  const rows = Math.ceil(order.length / PER);
+  const old = sheet.querySelectorAll('.cell.blank'); old.forEach(b => b.remove());
+  while (order.length < rows * PER) order.push(blankCell());
+  let films = [...sheet.querySelectorAll('.film')];
+  for (let r = 0; r < rows; r++) {
+    let f = films[r];
+    if (!f) { f = document.createElement('div'); f.className = 'film'; sheet.appendChild(f); }
+    order.slice(r * PER, r * PER + PER).forEach((c, k) => { if (f.children[k] !== c) f.insertBefore(c, f.children[k] || null); });
+    while (f.children.length > PER) f.lastChild.remove();
+  }
+  films.slice(rows).forEach(f => f.remove());
+  // 片边字：卷头和换了天的那格印日子
+  let newer = '';
+  order.forEach(c => {
+    const s = c.dataset.id && steps.find(x => x.id === +c.dataset.id), day = s ? dayOf(s.at) : '';
+    c.querySelector('b').textContent = s && day !== newer ? day : '';
+    if (s) newer = day;
+  });
+}
+function placeBox() {
+  const box = $('#box'), last = steps[steps.length - 1];
+  const id = viewing || (last && last.id), c = id && cells.get(id);
+  if (!c || !c.isConnected) { box.hidden = true; return; }
+  const sr = $('#sheet').getBoundingClientRect(), cr = c.getBoundingClientRect(), pad = 9;
+  const w = cr.width + pad * 2, h = cr.height + pad * 2, svg = box.firstElementChild;
+  box.hidden = false; box.style.left = (cr.left - sr.left - pad) + 'px'; box.style.top = (cr.top - sr.top - pad) + 'px';
+  svg.setAttribute('width', w); svg.setAttribute('height', h); svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.firstElementChild.setAttribute('d', rect(pad - 1.5, pad - 1.5, cr.width + 3, cr.height + 3, id));
+}
+function pick(id) {
+  const last = steps[steps.length - 1];
+  viewing = !last || id === last.id ? null : id;
+  showFrame(steps.find(x => x.id === id), false);
+  paintNow(); placeBox();
+  scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' });
+}
+$('#back').onclick = () => { const last = steps[steps.length - 1]; if (last) pick(last.id); };
+
+async function tick() {
+  try {
+    state = await (await api('/state')).json();
+    showDesk();
+    let advance = false;
+    if (state.lastStep && state.lastStep !== lastStep) {
+      const j = await (await api('/steps?since=' + lastStep)).json();
+      for (const s of j.steps) { const i = steps.findIndex(x => x.id === s.id); if (i >= 0) steps[i] = s; else steps.push(s); }
+      if (steps.length > 120) steps.splice(0, steps.length - 120);
+      advance = lastStep !== 0; lastStep = state.lastStep;
+    } else if (steps.length && !steps[steps.length - 1].thumb) {
+      // 最新一步的小图晚半秒才拍好，补一次
+      const j = await (await api('/steps?since=' + (steps[steps.length - 1].id - 1))).json();
+      if (j.steps.length) steps[steps.length - 1] = j.steps[j.steps.length - 1];
+    } else if (!state.lastStep && steps.length) { steps = []; lastStep = 0; viewing = null; } // 家里重启过，账清了
+    syncSheet();
+    const last = steps[steps.length - 1];
+    if (!viewing) { const fresh = !!(last && last.thumb && last.id !== markedId); showFrame(last, fresh); if (fresh) markedId = last.id; }
+    paintNow(); placeBox();
+  } catch (e) { if (e.message !== 'pair') paintDown(); }
+}
+function start() { stop(); tick(); timer = setInterval(() => { if (document.visibilityState === 'visible') tick(); }, 2500); }
+function stop() { clearInterval(timer); timer = null; }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
+addEventListener('resize', () => {
+  if ($('#desk').hidden) return;
+  syncSheet(); placeBox();
+  const s = steps.find(x => x.id === +$('#shot').dataset.id); if (s && s.thumb) aim(s, false);
+});
+
+async function hold(on) {
+  await api('/hold', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on }) });
+  await tick();
+}
+function openLive(note) { $('#liveNote').textContent = note; if (!$('#liveFrame').src) $('#liveFrame').src = '/'; $('#live').hidden = false; }
+$('#take').onclick = async () => { await hold(true); openLive('你在开，我松开了'); };
+$('#stop').onclick = async () => { await hold(true); };
+$('#give').onclick = () => hold(false);
+$('#liveGive').onclick = async () => { await hold(false); $('#live').hidden = true; };
+$('#liveClose').onclick = () => { $('#live').hidden = true; };
+$('#pic').addEventListener('click', () => openLive('在看直播'));
+
+start();
+</script>
+</body>
+</html>

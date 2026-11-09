@@ -1,0 +1,19 @@
+# 钥匙和你自己的配置
+deploy/*
+!deploy/door.example.json
+
+# 跑起来以后长出来的
+log/
+shots/
+*.exe
+
+# 生成出来的网页、拉下来的上游
+web/dist1/
+web/crossdesk-web-client/
+
+# 连接器在 VPS 上跑出来的
+connector/site.json
+connector/path.txt
+connector/relay.key
+connector/oauth.json
+connector/*.jsonl

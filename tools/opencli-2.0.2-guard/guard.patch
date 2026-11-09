@@ -1,0 +1,124 @@
+diff --git a/dist/src/browser/daemon-transport.js b/dist/src/browser/daemon-transport.js
+index 77cdc2d..30c1cda 100644
+--- a/dist/src/browser/daemon-transport.js
++++ b/dist/src/browser/daemon-transport.js
+@@ -16,6 +16,11 @@ function assertSupportedDaemonPortEnv() {
+ export async function requestDaemon(pathname, init) {
+     assertSupportedDaemonPortEnv();
+     const { timeout = 2000, headers, ...rest } = init ?? {};
++    if (pathname === '/command' && typeof rest.body === 'string' && /^[\w.-]{1,100}$/.test(process.env.KAEL_SCREEN_TURN || '')) {
++        const body = JSON.parse(rest.body);
++        body.screenTurnId ||= process.env.KAEL_SCREEN_TURN;
++        rest.body = JSON.stringify(body);
++    }
+     const controller = new AbortController();
+     const timer = setTimeout(() => controller.abort(), timeout);
+     try {
+diff --git a/dist/src/daemon.js b/dist/src/daemon.js
+index 6651808..94e9efd 100644
+--- a/dist/src/daemon.js
++++ b/dist/src/daemon.js
+@@ -30,6 +30,8 @@ import { recordExtensionVersion } from './update-check.js';
+ import { PROFILE_DISCONNECTED_HINT, buildCommandDispatchFailure, buildCommandTimeoutFailure, buildExtensionDisconnectFailure, getResponseCorsHeaders, resolveProfileRoute, } from './daemon-utils.js';
+ import { SESSION_LEASE_TTL_MS, SessionLeaseRegistry, buildSessionBusyFailure, getSessionLeaseKey, isSessionLeaseCommand, } from './session-lease.js';
+ import { SLOT_WAIT_DEFAULT_MS, SiteSlotScheduler, SlotAdmission, parseSlotPolicy, validSlotWaitMs } from './site-slots.js';
++import { acquireScreen, releaseScreen, reportUncertain } from './kael-screen-guard.js';
++let kaelUncertain = false;
+ const PORT = DEFAULT_DAEMON_PORT;
+ if (!isIgnorableDaemonPortEnv(process.env.OPENCLI_DAEMON_PORT)) {
+     log.error(unsupportedDaemonPortEnvMessage(process.env.OPENCLI_DAEMON_PORT));
+@@ -291,7 +293,15 @@ async function handleRequest(req, res) {
+         setTimeout(() => shutdown(), 100);
+         return;
+     }
++    if (req.method === 'GET' && url === '/kael-guard') {
++        jsonResponse(res, 200, { guard: 1, pending: pending.size, uncertain: kaelUncertain }); return;
++    }
++    // 人按了「还给你」＝看过了：屏幕小程序转过来，把没报上去的「不确定」一并清掉
++    if (req.method === 'POST' && url === '/kael-guard/clear') {
++        kaelUncertain = false; jsonResponse(res, 200, { guard: 1, uncertain: false }); return;
++    }
+     if (req.method === 'POST' && url === '/command') {
++        let screenLease = null, uncertain = false;
+         try {
+             const body = JSON.parse(await readBody(req));
+             if (!body.id) {
+@@ -405,11 +415,32 @@ async function handleRequest(req, res) {
+                 jsonResponse(res, 200, result);
+                 return;
+             }
++            // 只有碰屏幕的才过闸：前台窗，或报了这一趟（KAEL_SCREEN_TURN）；没写窗口的当前台算。
++            // 后台读网页、查东西（--window background）不问屏幕。
++            const kaelScreen = body.windowMode !== 'background' || !!body.screenTurnId;
++            if (kaelScreen) {
++                // 上回结果不确定、又没报上去：先报（屏幕那边会停手，等人按「还给你」），报不上就不动
++                if (kaelUncertain) {
++                    try { await reportUncertain(); kaelUncertain = false; }
++                    catch (error) { throw new DaemonCommandFailure('Previous browser action outcome unknown and screen control unreachable', 'screen_control_unavailable', 'Wait for the screen app to come back.', 503); }
++                }
++                try { screenLease = await acquireScreen(body); }
++                catch (error) { throw new DaemonCommandFailure(error.message, 'screen_control_unavailable', 'Wait for screen control to be released and its guard to be ready. Background reads can use --window background.', error.status || 503); }
++            }
++            // Acquiring the screen lease yields. A transport retry can have
++            // registered this same id while we were waiting; never dispatch it twice.
++            const raced = pending.get(body.id);
++            if (raced) {
++                const shared = await new Promise((resolve, reject) => raced.settlers.push({ resolve, reject }));
++                jsonResponse(res, 200, shared);
++                return;
++            }
+             const result = await new Promise((resolve, reject) => {
+                 const timer = setTimeout(() => {
+                     const entry = pending.get(body.id);
+                     if (!entry)
+                         return;
++                    if (screenLease) uncertain = true;
+                     const failure = buildCommandTimeoutFailure(entry.action, timeoutMs);
+                     if (failure.countAsCommandResultUnknown && entry.dispatched) {
+                         commandResultUnknownCount++;
+@@ -452,6 +483,7 @@ async function handleRequest(req, res) {
+             jsonResponse(res, 200, result);
+         }
+         catch (err) {
++            if (screenLease && /unknown|disconnect|timeout/i.test(String(err?.errorCode || err?.message || ''))) uncertain = true;
+             const commandFailure = err instanceof DaemonCommandFailure ? err : null;
+             jsonResponse(res, commandFailure?.status ?? (err instanceof Error && err.message.includes('timeout') ? 408 : 400), {
+                 ok: false,
+@@ -459,6 +491,8 @@ async function handleRequest(req, res) {
+                 ...(commandFailure?.errorCode ? { errorCode: commandFailure.errorCode } : {}),
+                 ...(commandFailure?.errorHint ? { errorHint: commandFailure.errorHint } : {}),
+             });
++        } finally {
++            if (screenLease) { try { await releaseScreen(screenLease, uncertain); } catch { kaelUncertain = true; } }
+         }
+         return;
+     }
+diff --git a/dist/src/kael-screen-guard.js b/dist/src/kael-screen-guard.js
+new file mode 100644
+index 0000000..8c651dd
+--- /dev/null
++++ b/dist/src/kael-screen-guard.js
+@@ -0,0 +1,23 @@
++// Local integration patch for OpenCLI 2.0.2. Every extension dispatch acquires a
++// screen lease, including raw CLI/adapter calls. Unknown outcomes keep the lease
++// unresolved: the phone must not be told that the computer has already stopped.
++export async function screenRequest(route, body, request = fetch) {
++  const r = await request('http://127.0.0.1:5260/agent/oc/' + route, {
++    method: 'POST', headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify(body), signal: AbortSignal.timeout(2500),
++  });
++  if (!r.ok) { const error = new Error('Screen control unavailable or held (' + r.status + ')'); error.status = r.status; throw error; }
++  return r.json();
++}
++export async function acquireScreen(body, request) {
++  const lease = await screenRequest('acquire', { id: body.id, turnId: body.screenTurnId || '' }, request);
++  if (!lease.token) throw new Error('Screen lease missing');
++  return lease.token;
++}
++export async function releaseScreen(token, uncertain = false, request) {
++  return screenRequest('release', { token, uncertain }, request);
++}
++// 上回结果不确定但当时没报上去（小程序不在）：补报，小程序停手，等人按「还给你」
++export async function reportUncertain(request) {
++  return screenRequest('uncertain', {}, request);
++}

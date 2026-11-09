@@ -1,0 +1,10 @@
+{
+  "_": "抄一份成 deploy/site.json 再改。家里的屏幕小程序、VPS 上的连接器（放 /opt/screen-connector/site.json）、web/build.mjs 都读这一份。这里面没有钥匙，钥匙在 deploy/door.json。",
+  "signal": "self",
+  "_signal": "self＝信令在你自己的 VPS，门上挂钥匙；public＝用 CrossDesk 官方的公共信令，不用 VPS，但只剩设备号＋密码一把锁",
+  "domain": "screen.example.com",
+  "iceServers": [{ "urls": ["stun:stun.l.google.com:19302"] }],
+  "chatOrigins": [],
+  "cardOrigins": [],
+  "deviceId": "你电脑上 CrossDesk 显示的设备号"
+}

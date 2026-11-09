@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>手试</title>
+<style>
+  body { margin:0; background:#eef0ea; font:18px/1.6 system-ui,"Microsoft YaHei",sans-serif; color:#2b2e2a; }
+  main { padding:40px; }
+  textarea { width:520px; height:140px; font:inherit; padding:10px; border:2px solid #3f6b5a; background:#fff; }
+  #echo { margin-top:16px; min-height:1.6em; }
+  #clicks { margin-top:8px; color:#7d8278; font-size:14px; }
+</style></head>
+<body><main>
+  <textarea id="t" placeholder="这里"></textarea>
+  <div id="echo">（空）</div>
+  <div id="clicks">点击：0</div>
+</main>
+<script>
+  const t = document.getElementById('t'), echo = document.getElementById('echo'), clicks = document.getElementById('clicks');
+  let n = 0;
+  t.addEventListener('input', () => { echo.textContent = '收到：' + t.value; });
+  document.addEventListener('mousedown', e => { n++; clicks.textContent = '点击：' + n + '（最后一下 ' + e.button + ' @ ' + e.screenX + ',' + e.screenY + '）'; });
+</script>
+</body></html>
