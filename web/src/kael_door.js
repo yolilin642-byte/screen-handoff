@@ -2,7 +2,7 @@
 // 不带的连密码框都摸不到，CrossDesk 的密码退成第二把锁。（电脑上的 CrossDesk 自己走另一条藏起来的门牌，不经这里。）
 // 这一页排在 web_client.js 前头，赶在它头一回连信令之前把钥匙接到地址上。钥匙从哪来：
 //   ① 地址 #…&k=<钥匙>——嵌它的聊天页递进来（聊天页自己有门，钥匙从电脑上的小程序拿）；
-//   ② 这台手机上回记下的（localStorage，分站存：聊天间里那扇框、ChatGPT 那张卡、直接打开这页，各记各的）；
+//   ② 这台手机上回记下的（localStorage，分站存：你的聊天页里那扇框、聊天应用里的直播卡、直接打开这页，各记各的）；
 //   ③ 操控台配对过的（同站的 ks 钥匙，问 /api/agent/door 换）；
 //   ④ 都没有：在密码那格的位置摆一格「配对码」，Kael 发的六位数，经家里换回钥匙记下。小图（#mini）不出这格，只报缺钥匙。
 // 记下的那把不灵了（钥匙换过）：/door 一问就知道，丢掉重来。
@@ -66,7 +66,7 @@
     document.head.appendChild(st);
     box = document.createElement('div');
     box.id = 'kael-door';
-    box.innerHTML = '<input id="kael-door-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Kael 给的配对码">'
+    box.innerHTML = '<input id="kael-door-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="六位配对码">'
       + '<button type="button">开门</button><div class="kd-msg"></div>';
     const panel = document.querySelector('.connection-panel') || document.getElementById('connection-overlay') || document.body;
     panel.insertBefore(box, panel.firstChild);
@@ -92,7 +92,7 @@
   }
 
   // —— 进门时 ——
-  if (fromHash) return;   // 聊天间刚递进来的，不用再问
+  if (fromHash) return;   // 聊天页刚递进来的，不用再问
   if (key) {
     // 记下的那把先照用（不耽误连），同时问一声还灵不灵
     fetch('/door?k=' + key, { cache: 'no-store' }).then((r) => { if (r.status === 403) showPair('stale'); }).catch(() => {});

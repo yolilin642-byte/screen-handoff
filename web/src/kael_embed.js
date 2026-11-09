@@ -2,15 +2,15 @@
 // 连上、要密码、断了都告诉外面那层，外面据此决定什么时候把我最后那张图换成直播。不带 #embed 时什么都不做。
 // #embed&mini：聊天里那张小图放直播。只要画面：不问密码、不出任何按钮、
 // 不出声、不接手指（外面那层把它当一张会动的图）；没存过密码就报 needpwd，外面退回定格的图，等人在大的那扇里输过一次。
-// 连上以后自己换成帧率优先（操作间中画质、小图低画质）；操作间每 10 秒报一回线路的数（kaelLive:'qos'），外面记进小账。
-// #embed&card：长在 ChatGPT 对话框里的那张卡。那个框不一定带 referrer，
+// 连上以后自己换成帧率优先（大屏中画质、小图低画质）；大屏每 10 秒报一回线路的数（kaelLive:'qos'），外面记进小账。
+// #embed&card：长在 聊天应用对话框里的直播卡。那个框不一定带 referrer，
 // 所以等外面先打一声招呼（kaelHello），认 e.origin——这是浏览器给的，冒充不了；只认登记过的那个框。
 (() => {
   const h = new URLSearchParams(location.hash.slice(1));
   if (!h.has('embed') || parent === window) return;
   let ref = '';
   try { ref = new URL(document.referrer).origin; } catch {}
-  // 认哪些外层不写死，读首页那份配置的 kael.chatOrigins（嵌它的聊天页）、kael.cardOrigins（ChatGPT 卡那个框）
+  // 认哪些外层不写死，读首页那份配置的 kael.chatOrigins（嵌它的聊天页）、kael.cardOrigins（聊天应用里直播卡那个框）
   const KC = (window.CROSSDESK_CONFIG && window.CROSSDESK_CONFIG.kael) || {};
   if ((KC.chatOrigins || []).includes(ref)) return kaelEmbedMain(h, ref);
   if (!h.has('card')) return;
@@ -26,7 +26,7 @@ function kaelEmbedMain(h, parentOrigin) {
   const $ = (id) => document.getElementById(id);
   const root = document.documentElement;
   const mini = h.has('mini');
-  // ChatGPT 那张卡不记密码（以前记过的也删掉），
+  // 聊天应用里的直播卡不记密码（以前记过的也删掉），
   // 半小时没碰、或切出去一分钟，就断开、清掉那格，要连再输；卡上那颗「断开」也走这条。
   // 嵌在自家聊天页里的照旧记着（聊天页自己有门）
   const card = h.has('card');
@@ -44,7 +44,7 @@ function kaelEmbedMain(h, parentOrigin) {
   const id = (h.get('id') || '').replace(/\D/g, '');
   const st = document.createElement('style');
   // 底透明：外面那层的底色透上来，画面四周不再是一圈黑。要密码那一屏只留一格密码和「连接」，
-  // 样子跟外面聊天间的按钮走（半透明白底、细线、圆头），设备号外面给了、不再摆一遍
+  // 样子跟外面聊天页的按钮走（半透明白底、细线、圆头），设备号外面给了、不再摆一遍
   root.classList.add('kael-embed');
   if (mini) root.classList.add('kael-mini');
   st.textContent = 'html,body,.app-container,#media,#video-container,#connection-overlay{background:transparent!important}'
@@ -71,7 +71,7 @@ function kaelEmbedMain(h, parentOrigin) {
     + 'html.kael-embed .connection-panel,html.kael-embed .connection-panel *{filter:none!important;text-shadow:none!important}'
     + 'html.kael-embed .connection-panel::before,html.kael-embed .connection-panel::after,html.kael-embed .option::before,html.kael-embed .option::after{content:none!important;display:none!important}'
     + 'html.kael-embed #connection-form,html.kael-embed #connection-form>.option{width:100%!important;margin:0!important;padding:0!important;display:block!important;box-shadow:none!important;background:none!important}'
-    // 操作间：CrossDesk 自己那颗圆按钮（键盘、鼠标模式、断开都在它里头）默认蹲右上角，正好压在外面那颗 ✕ 底下。
+    // 大屏：CrossDesk 自己那颗圆按钮（键盘、鼠标模式、断开都在它里头）默认蹲右上角，正好压在外面那颗 ✕ 底下。
     // 挪到右下角、跟外面的按钮一个样子（半透明白底、细线、灰的图标）。原先拿 !important 把 left/top 钉死，
     // 它自己拖动时写的位置全被盖掉。现在只管样子，起始位置在下面交给它自己那套（orbPosition），拖得动
     + 'html.kael-embed:not(.kael-mini) #panel-collapsed-bar{'
@@ -181,7 +181,7 @@ function kaelEmbedMain(h, parentOrigin) {
   if (noDoor()) ask('door'); else begin();
   let live = false;
   // 网页版一连上就要「高画质＋画质优先」：网一紧它宁可掉帧也守着原尺寸（见过五分钟里主机一直发 2560×1600、2.45Mbps，
-  // 一回没往下调，后两分钟手机那头一直在丢包）。这扇框连上以后自己换成「帧率优先」：网紧先降分辨率、不掉帧；操作间中画质，小图低画质。
+  // 一回没往下调，后两分钟手机那头一直在丢包）。这扇框连上以后自己换成「帧率优先」：网紧先降分辨率、不掉帧；大屏中画质，小图低画质。
   // 人在圆按钮里自己改了就听人的，下一回连上再换回来。
   const WANT = mini ? { quality: 0, frame_rate: 30, preference: 0 } : { quality: 1, frame_rate: 30, preference: 0 };
   let tuned = false, tuneN = 0;
@@ -208,7 +208,7 @@ function kaelEmbedMain(h, parentOrigin) {
   video?.addEventListener('playing', onFrame);
   if (video?.requestVideoFrameCallback) video.requestVideoFrameCallback(onFrame);
   else video?.addEventListener('loadeddata', onFrame);
-  // 操作间里每 10 秒把这条线的数报给外面（走哪条路、收多快、丢多少、几帧、多大、主机那头报的），外面记进小账；下回再卡我直接看卡在哪一段。只有数，没有画面
+  // 大屏里每 10 秒把这条线的数报给外面（走哪条路、收多快、丢多少、几帧、多大、主机那头报的），外面记进小账；下回再卡我直接看卡在哪一段。只有数，没有画面
   if (!mini) setInterval(() => {
     const s = window.CrossDeskStats;
     if (stopped || !live || !s) return;

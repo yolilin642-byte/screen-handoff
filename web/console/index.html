@@ -261,7 +261,7 @@ function showFrame(step, fresh) {
   if (!step) { img.classList.remove('on'); img.removeAttribute('src'); delete img.dataset.id; $('#mark').hidden = true; return; }
   if (!step.thumb) { if (img.classList.contains('on')) img.style.opacity = .55; $('#mark').hidden = true; placed = null; return; } // 这一步的图还在拍，旧的压暗留着
   if (img.dataset.id !== String(step.id)) {
-    // 新图到之前旧图压暗留着、不闪白（这根管子要绕东京，一张大图一两秒）
+    // 新图到之前旧图压暗留着、不闪白（这根管子要绕 VPS，一张大图一两秒）
     img.dataset.id = step.id; img.style.opacity = img.classList.contains('on') ? .55 : '';
     $('#mark').hidden = true; placed = null;
     const src = API + '/thumb/' + step.id + '.jpg', pre = new Image();

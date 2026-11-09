@@ -9,7 +9,7 @@
   #wrap{position:relative;width:100%;aspect-ratio:16/10}
   body.full #wrap{aspect-ratio:auto;height:calc(100vh - 30px)}
   body.full #fs{display:none}
-  /* 「断开」放最左：全屏时右上角是 GPT 自己的叉，别再挨着它 */
+  /* 「断开」放最左：全屏时右上角是聊天应用自己的叉，别再挨着它 */
   #cut{display:none;color:#a8503a;border-color:rgba(168,80,58,.32)}
   body.on #cut{display:inline-block}
   #take{white-space:nowrap;min-width:62px}
@@ -40,7 +40,7 @@ const paintControl = () => {
   takeBtn.textContent = control.busy ? '在确认…' : control.waiting ? '取消接手' : control.hold ? '还给你' : '我来';
   takeBtn.setAttribute('aria-pressed', String(control.known && control.hold));
   takeBtn.title = !control.known ? '配对后才能确认接手状态' : control.waiting ? '仍有操作在途，可以取消接手' : '';
-  st.textContent = control.error || (control.known && control.hold ? control.waiting ? '正在松手，请等一下…' : '你接手了，GPT 等着' : streamText);
+  st.textContent = control.error || (control.known && control.hold ? control.waiting ? '正在松手，请等一下…' : '你接手了，AI 等着' : streamText);
   st.className = control.error ? 'bad' : control.known && control.hold ? 'held' : streamClass;
 };
 const show = (txt, cls) => { streamText = txt; streamClass = cls || ''; paintControl(); };

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# 给官端 AI（ChatGPT 等）用的连接器：MCP（直播卡＋看屏幕、浏览器工具）＋OAuth，工具调用经隧道转回家里的屏幕小程序。
-# 无状态 Streamable HTTP，只回 JSON，不开 SSE。听 127.0.0.1:39271，东京 Caddy 按 path.txt 那条路转进来。
+# 给官端聊天应用（ChatGPT、Claude 这类能加 MCP 连接器的）用的连接器：MCP（直播卡＋看屏幕、浏览器工具）＋OAuth，工具调用经隧道转回家里的屏幕小程序。
+# 无状态 Streamable HTTP，只回 JSON，不开 SSE。听 127.0.0.1:39271，VPS 上的 Caddy 按 path.txt 那条路转进来。
 import base64, hashlib, hmac, html as htmlmod, json, os, secrets, threading, time, urllib.error, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -45,10 +45,10 @@ TOOLS = [
 ]
 
 
-# —— 给 GPT 的手 ——
-# 整个连接器挂在 OAuth 后面：ChatGPT 头一回连弹授权页，人输「新设备的码」给的六位数；码交给家里核（用掉就没了）。
-# 工具都不标只读：每一下 ChatGPT 都先问人。活儿在家里那台电脑上干（screen 小程序 /api/agent/gpt），从 VPS 本机直接敲 39260、
-# 带 relay.key；外面来的 /api/agent/gpt* Caddy 一律 403。
+# —— 给远程 AI 的手 ——
+# 整个连接器挂在 OAuth 后面：聊天应用头一回连弹授权页，人输「新设备的码」给的六位数；码交给家里核（用掉就没了）。
+# 工具都不标只读：聊天应用多半每一下都先问人（ChatGPT 是这样）。活儿在家里那台电脑上干（screen 小程序 /api/agent/remote），从 VPS 本机直接敲 39260、
+# 带 relay.key；外面来的 /api/agent/remote* Caddy 一律 403。
 ISSUER = ORIGIN
 MCP_URL = ISSUER + PATH
 HOME = os.environ.get('KAEL_HOME') or 'http://127.0.0.1:39260'   # 本机测试时指到家里 127.0.0.1:5261
@@ -138,7 +138,7 @@ button{{background:rgba(224,182,79,.22);border-color:rgba(170,140,70,.5)}}
 <h1>允许 {client} 用你的电脑？</h1>
 <p>允许以后，它能：</p>
 <ul><li>看你的整块屏幕</li><li>在你的 Chrome 里开网页、点、打字（登着号的站也算）</li></ul>
-<p>每一下 ChatGPT 都会先问你；你在直播卡或操控台上按「我来」、或者碰一下鼠标键盘，它就停。</p>
+<p>聊天应用多半每一下都会先问你；你在直播卡或操控台上按「我来」、或者碰一下鼠标键盘，它就停。</p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="rid" value="{rid}">
 <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="「新设备的码」给的六位数" autofocus>
@@ -146,7 +146,7 @@ button{{background:rgba(224,182,79,.22);border-color:rgba(170,140,70,.5)}}
 <div class="row"><a class="no" href="/oauth/deny?rid={rid}">不允许</a><button type="submit">允许</button></div>
 </form></main></body></html>'''
 
-GPT_TOOLS = [
+REMOTE_TOOLS = [
     {'name': 'screen_look', 'title': 'Look at her screen',
      'description': "Take a screenshot of the user's whole computer screen (Windows, her own computer). "
                     'Use it to see what is on screen before and after acting.',
@@ -190,7 +190,7 @@ GPT_TOOLS = [
      'inputSchema': {'type': 'object', 'properties': {}},
      'annotations': {'readOnlyHint': False, 'destructiveHint': False, 'openWorldHint': True}},
 ]
-GPT_MAP = {'screen_look': 'look', 'browser_open': 'open', 'browser_state': 'state', 'browser_extract': 'extract',
+REMOTE_MAP = {'screen_look': 'look', 'browser_open': 'open', 'browser_state': 'state', 'browser_extract': 'extract',
            'browser_click': 'click', 'browser_type': 'type', 'browser_keys': 'keys', 'browser_scroll': 'scroll',
            'browser_back': 'back', 'browser_close': 'close'}
 INSTRUCTIONS = ("These tools act on the user's own Windows computer, live, while she watches. Look before acting. "
@@ -198,8 +198,8 @@ INSTRUCTIONS = ("These tools act on the user's own Windows computer, live, while
                 "Never buy, pay, delete, or send messages/posts on their behalf unless they explicitly asked for that exact action.")
 
 
-def gpt_call(name, args):
-    st, o = home('/api/agent/gpt', {'tool': GPT_MAP[name], 'args': args})
+def remote_call(name, args):
+    st, o = home('/api/agent/remote', {'tool': REMOTE_MAP[name], 'args': args})
     if st == 200 and o.get('ok'):
         content = [{'type': 'text', 'text': o.get('text') or '(done)'}]
         if o.get('image'):
@@ -236,7 +236,7 @@ def handle(msg, ua):
     elif method == 'ping':
         r = {}
     elif method == 'tools/list':
-        r = {'tools': TOOLS + GPT_TOOLS}
+        r = {'tools': TOOLS + REMOTE_TOOLS}
     elif method == 'resources/list':
         r = {'resources': [{'uri': LIVE_URI, 'name': 'screen-live card', 'mimeType': MIME, '_meta': LIVE_META}]}
     elif method == 'resources/templates/list':
@@ -256,9 +256,9 @@ def handle(msg, ua):
         elif name == 'card_report':
             log('reports.jsonl', {'t': time.strftime('%Y-%m-%d %H:%M:%S'), 'ua': ua, 'report': args.get('report')})
             r = {'content': [{'type': 'text', 'text': 'saved'}]}
-        elif name in GPT_MAP:
-            r = gpt_call(name, args)
-            log('calls.jsonl', {'t': time.strftime('%H:%M:%S'), 'gpt': name, 'err': bool(r.get('isError'))})
+        elif name in REMOTE_MAP:
+            r = remote_call(name, args)
+            log('calls.jsonl', {'t': time.strftime('%H:%M:%S'), 'tool': name, 'err': bool(r.get('isError'))})
         else:
             return {'jsonrpc': '2.0', 'id': mid, 'error': {'code': -32602, 'message': 'unknown tool'}}
     else:
@@ -312,7 +312,7 @@ class H(BaseHTTPRequestHandler):
     # —— OAuth ——
     def auth_page(self, rid, err=''):
         p = PENDING.get(rid)
-        name = (p or {}).get('client_name') or 'ChatGPT'
+        name = (p or {}).get('client_name') or 'AI 应用'
         return self.page(200, AUTH_PAGE.format(client=htmlmod.escape(name[:40]), rid=htmlmod.escape(rid), err=htmlmod.escape(err)))
 
     def oauth_get(self, path, q):
@@ -370,10 +370,10 @@ class H(BaseHTTPRequestHandler):
             rid, code = (f.get('rid') or [''])[0], ''.join(ch for ch in (f.get('code') or [''])[0] if ch.isdigit())
             p = PENDING.get(rid)
             if not p or p['exp'] < time.time():
-                return self.page(400, '<p style="font:15px sans-serif;padding:40px">这一页过期了，回 ChatGPT 重新连一次。</p>')
+                return self.page(400, '<p style="font:15px sans-serif;padding:40px">这一页过期了，回聊天应用里重新连一次。</p>')
             if len(code) != 6:
                 return self.auth_page(rid, '是六位数')
-            st, o = home('/api/agent/gptpair', {'code': code, 'client': p['client_name']}, timeout=15)
+            st, o = home('/api/agent/remotepair', {'code': code, 'client': p['client_name']}, timeout=15)
             if st != 200:
                 return self.auth_page(rid, o.get('error') or ('家里没回音（%s）' % st))
             PENDING.pop(rid, None)

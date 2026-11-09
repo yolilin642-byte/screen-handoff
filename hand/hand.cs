@@ -187,7 +187,7 @@ static class Hand
 
     static void Touch() { lastOurs = Environment.TickCount; }
 
-    // —— 我正在用的那扇窗：聊天间那张会动的图只裁这一扇 ——
+    // —— 我正在用的那扇窗：聊天页那张会动的图只裁这一扇 ——
     static void Win(int x, int y)
     {
         IntPtr h;
