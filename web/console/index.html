@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#eef0ea">
-<title>Kael 在你电脑上</title>
+<title>AI 在你电脑上</title>
 <style>
   /* 操控台，像看片台上摊开的一卷底片：顶上放大的那一格是你电脑那一刻，底下剪成三格一段的是我做过的每一步，
      我手落下的地方拿朱红蜡笔圈着。纸 #eef0ea、墨 #262824、片基 #d6dace（透光的灰，不是黑片）、
@@ -104,7 +104,7 @@
 
 <section id="pair" class="page" hidden>
   <div class="door">
-    <p>这扇门要先配对一次。<br>在聊天里跟我要一个配对码，<br>六位数，填在下面。</p>
+    <p>这扇门要先配对一次。<br>在进过门的设备上点「新设备的码」，<br>六位数，填在下面。</p>
     <div class="codewrap">
       <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" aria-label="配对码" placeholder="······">
       <svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><path class="wax" d="M1 5 C 30 3, 62 6.5, 99 3.6"/></svg>
@@ -232,7 +232,7 @@ $('#pairBtn').onclick = async () => {
   const r = await fetch(API + '/pair', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
   if (r.ok) { $('#code').value = ''; showDesk(); start(); return; }
   const j = await r.json().catch(() => ({}));
-  $('#pairMsg').textContent = r.status === 410 ? '这个配对码过期了，再跟我要一个。' : (j.error || '配对没成，再试一次。');
+  $('#pairMsg').textContent = r.status === 410 ? '这个配对码过期了，再要一个。' : (j.error || '配对没成，再试一次。');
 };
 $('#code').addEventListener('keydown', e => { if (e.key === 'Enter') $('#pairBtn').click(); });
 
@@ -245,9 +245,9 @@ function paintNow() {
   const at = v ? v.at : (state && state.captionAt);
   $('#nowTime').textContent = at ? hm(at) : '';
   setCaption($('#caption'), v ? sayOf(v)
-    : s === 'idle' ? '我这会儿没在你电脑上动手。\n要我干活，在聊天里说。'
-    : s === 'held' ? '你接手了，我松开了。\n用完按「还给你」。'
-    : s === 'waiting' ? '你在用，我先等着。'
+    : s === 'idle' ? 'AI 这会儿没在你电脑上动手。\n要它干活，去跟它说。'
+    : s === 'held' ? '你接手了，AI 松开了。\n用完按「还给你」。'
+    : s === 'waiting' ? '你在用，AI 先等着。'
     : (state.caption || '在干活'));
   $('#back').hidden = !v;
   $('#take').hidden = s === 'held'; $('#stop').hidden = s === 'held'; $('#give').hidden = s !== 'held';
@@ -396,7 +396,7 @@ async function hold(on) {
   await tick();
 }
 function openLive(note) { $('#liveNote').textContent = note; if (!$('#liveFrame').src) $('#liveFrame').src = '/'; $('#live').hidden = false; }
-$('#take').onclick = async () => { await hold(true); openLive('你在开，我松开了'); };
+$('#take').onclick = async () => { await hold(true); openLive('你在开，AI 松开了'); };
 $('#stop').onclick = async () => { await hold(true); };
 $('#give').onclick = () => hold(false);
 $('#liveGive').onclick = async () => { await hold(false); $('#live').hidden = true; };
